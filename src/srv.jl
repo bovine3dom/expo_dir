@@ -40,9 +40,16 @@ function get_trouvailles()
         end
     end
 
-    # todo: delete ones without CSVs
+    for (k,v) in trouvailles
+        for (extension,filepath) in v
+            if extension == "csv"
+                trouvailles[k]["modified"] = mtime(filepath)
+            end
+        end
+    end
 
-    keys_sorted = sort(collect(keys(trouvailles)),rev=true)
+    # todo: delete ones without CSVs
+    keys_sorted = sort(collect(keys(trouvailles)), by=k -> get(trouvailles[k], "modified", 0), rev=true)
     return trouvailles, keys_sorted
 end
 
