@@ -15,14 +15,18 @@ function get_trouvailles()
     trouvailles = Dict()
     for (root, dirs, files) in walkdir(DIRECTORY)
         for file in files
-            # for each CSV
             extension = splitext(file)[2][2:end]
-            no_ext = joinpath(root, splitext(file)[1])[length(DIRECTORY)+1:end]
-            trouvailles[no_ext] = get(trouvailles,no_ext, Dict())
-            trouvailles[no_ext][extension] = joinpath(root, file)
+            # CSV files: key without extension
+            # Arrow/parquet/geojson: key with extension
+            if extension == "csv"
+                key = joinpath(root, splitext(file)[1])[length(DIRECTORY)+1:end]
+            else
+                key = joinpath(root, file)[length(DIRECTORY)+1:end]
+            end
+            trouvailles[key] = get(trouvailles, key, Dict())
+            trouvailles[key][extension] = joinpath(root, file)
         end
     end
-    trouvailles
 
     for (k,v) in trouvailles
         for (extension,filepath) in v
@@ -34,7 +38,7 @@ function get_trouvailles()
 
     for (k,v) in trouvailles
         for (extension,filepath) in v
-            if extension == "csv"
+            if extension in ["csv", "arrow", "parquet", "geojson"]
                 trouvailles[k]["filesize"] = datasize(filesize(filepath))
             end
         end
@@ -42,13 +46,18 @@ function get_trouvailles()
 
     for (k,v) in trouvailles
         for (extension,filepath) in v
-            if extension == "csv"
+            if extension in ["csv", "arrow", "parquet", "geojson"]
                 trouvailles[k]["modified"] = mtime(filepath)
             end
         end
     end
 
-    # todo: delete ones without CSVs
+    # Delete entries without any supported data format
+    supported_formats = ["csv", "arrow", "parquet", "geojson"]
+    filter!(trouvailles) do (k, v)
+        !isempty(intersect(keys(v), supported_formats))
+    end
+
     keys_sorted = sort(collect(keys(trouvailles)), by=k -> get(trouvailles[k], "modified", 0), rev=true)
     return trouvailles, keys_sorted
 end
