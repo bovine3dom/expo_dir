@@ -43,6 +43,10 @@ function get_trouvailles()
     metadata_key_by_entry = Dict()
 
     for (root, dirs, files) in walkdir(DIRECTORY)
+        relative_root = relpath(root, DIRECTORY)
+        depth = relative_root == "." ? 0 : length(splitpath(relative_root))
+        depth >= 1 && empty!(dirs)
+
         for file in files
             extension = extension_of(file)
             if extension == "json"
