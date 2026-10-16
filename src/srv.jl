@@ -6,6 +6,7 @@ using Humanize: datasize
 PORT = get(ENV, "JULIA_API_PORT", 1989)
 
 DIRECTORY = "/home/olie/projects/H3-MON/www/data/"
+CONFIG_PATH = joinpath(@__DIR__, "..", "config.json")
 
 TARGET_ROOT = "expo/?data="
 
@@ -18,13 +19,13 @@ function extension_of(file)
     isempty(extension) ? "" : lowercase(extension[2:end])
 end
 
-function relative_metadata_key(root, file)
-    relpath(joinpath(root, splitext(file)[1]), DIRECTORY)
+function relative_metadata_key(root, file, directory)
+    relpath(joinpath(root, splitext(file)[1]), directory)
 end
 
-function relative_data_key(root, file, extension)
+function relative_data_key(root, file, extension, directory)
     path = extension == "csv" ? joinpath(root, splitext(file)[1]) : joinpath(root, file)
-    relpath(path, DIRECTORY)
+    relpath(path, directory)
 end
 
 function html_escape(value)
@@ -37,29 +38,30 @@ function html_escape(value)
     # replace(text, "'" => "&#39;")
 end
 
-function get_trouvailles()
+function get_trouvailles(directory=DIRECTORY; config_path=CONFIG_PATH)
+    ignored_words = lowercase.(get(JSON.parsefile(config_path), "ignored_words", String[]))
     trouvailles = Dict()
     metadata_by_key = Dict()
     metadata_key_by_entry = Dict()
 
-    for (root, dirs, files) in walkdir(DIRECTORY)
-        relative_root = relpath(root, DIRECTORY)
+    for (root, dirs, files) in walkdir(directory)
+        relative_root = relpath(root, directory)
         depth = relative_root == "." ? 0 : length(splitpath(relative_root))
         depth >= 1 && empty!(dirs)
 
         for file in files
             extension = extension_of(file)
             if extension == "json"
-                metadata_by_key[relative_metadata_key(root, file)] = JSON.parsefile(joinpath(root, file))
+                metadata_by_key[relative_metadata_key(root, file, directory)] = JSON.parsefile(joinpath(root, file))
                 continue
             end
 
             extension in SUPPORTED_FORMATS || continue
 
-            key = relative_data_key(root, file, extension)
+            key = relative_data_key(root, file, extension, directory)
             trouvailles[key] = get(trouvailles, key, Dict())
             trouvailles[key][extension] = joinpath(root, file)
-            metadata_key_by_entry[key] = relative_metadata_key(root, file)
+            metadata_key_by_entry[key] = relative_metadata_key(root, file, directory)
         end
     end
 
@@ -79,10 +81,13 @@ function get_trouvailles()
         end
     end
 
-    # Delete entries without any supported data format
+    # Remove hidden entries and entries without a supported data format.
     filter!(trouvailles) do (k, v)
         metadata = get(v, "metadata", Dict())
-        get(metadata, "hidden", false) != true && any(extension -> haskey(v, extension), SUPPORTED_FORMATS)
+        title = lowercase(string(k, "\n", get(metadata, "t", "")))
+        get(metadata, "hidden", false) != true &&
+            !any(word -> occursin(word, title), ignored_words) &&
+            any(extension -> haskey(v, extension), SUPPORTED_FORMATS)
     end
 
     keys_sorted = sort(collect(keys(trouvailles)), by=k -> get(trouvailles[k], "modified", 0), rev=true)
@@ -121,4 +126,6 @@ get("/") do
     ")
 end
 
-serve(; host="0.0.0.0", port=PORT)
+if abspath(PROGRAM_FILE) == @__FILE__
+    serve(; host="0.0.0.0", port=PORT)
+end
